@@ -28,8 +28,10 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
+import { RoleField } from "./RoleField"
 
 const formSchema = z
   .object({
@@ -41,7 +43,7 @@ const formSchema = z
       .optional()
       .or(z.literal("")),
     confirm_password: z.string().optional(),
-    is_superuser: z.boolean().optional(),
+    role: z.enum(["admin", "manager", "member"]).optional(),
     is_active: z.boolean().optional(),
   })
   .refine((data) => !data.password || data.password === data.confirm_password, {
@@ -60,6 +62,9 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
+  const { user: currentUser } = useAuth()
+  // The API rejects admins removing their own access; reflect that in the UI.
+  const isSelf = currentUser?.id === user.id
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -68,7 +73,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
     defaultValues: {
       email: user.email,
       full_name: user.full_name ?? undefined,
-      is_superuser: user.is_superuser,
+      role: user.role,
       is_active: user.is_active,
     },
   })
@@ -186,21 +191,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="is_superuser"
-                render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormLabel className="font-normal">Is superuser?</FormLabel>
-                  </FormItem>
-                )}
-              />
+              <RoleField control={form.control} name="role" disabled={isSelf} />
 
               <FormField
                 control={form.control}
@@ -211,6 +202,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                       <Checkbox
                         checked={field.value}
                         onCheckedChange={field.onChange}
+                        disabled={isSelf}
                       />
                     </FormControl>
                     <FormLabel className="font-normal">Is active?</FormLabel>
