@@ -1,4 +1,4 @@
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from typing import Annotated
 
 import jwt
@@ -11,7 +11,7 @@ from sqlmodel import Session
 from app.core import security
 from app.core.config import settings
 from app.core.db import engine
-from app.models import TokenPayload, User
+from app.models import USER_VIEWER_ROLES, TokenPayload, User, UserRole
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
@@ -49,9 +49,23 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def get_current_active_superuser(current_user: CurrentUser) -> User:
-    if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=403, detail="The user doesn't have enough privileges"
-        )
-    return current_user
+def require_roles(*roles: UserRole) -> Callable[[User], User]:
+    """Dependency factory: allow only users whose current role is in `roles`.
+
+    The role is read from the database on every request (see get_current_user),
+    so role or active-status changes apply to sessions that already exist.
+    """
+    allowed = frozenset(roles)
+
+    def checker(current_user: CurrentUser) -> User:
+        if current_user.role not in allowed:
+            raise HTTPException(
+                status_code=403, detail="The user doesn't have enough privileges"
+            )
+        return current_user
+
+    return checker
+
+
+get_current_admin = require_roles(UserRole.ADMIN)
+get_current_user_viewer = require_roles(*USER_VIEWER_ROLES)

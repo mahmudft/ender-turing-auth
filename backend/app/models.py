@@ -1,6 +1,8 @@
 import uuid
 from datetime import UTC, datetime
+from enum import StrEnum
 
+import sqlalchemy as sa
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -9,11 +11,33 @@ def get_datetime_utc() -> datetime:
     return datetime.now(UTC)
 
 
+class UserRole(StrEnum):
+    ADMIN = "admin"  # manages users and their access
+    MANAGER = "manager"  # views users and metrics, cannot change access
+    MEMBER = "member"  # manages only their own profile
+
+
+# Roles allowed to view (but not necessarily change) other users and metrics
+USER_VIEWER_ROLES = frozenset({UserRole.ADMIN, UserRole.MANAGER})
+
+
 # Shared properties
 class UserBase(SQLModel):
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     is_active: bool = True
-    is_superuser: bool = False
+    role: UserRole = Field(
+        default=UserRole.MEMBER,
+        # Stored as VARCHAR (not a native PG enum) so roles are easy to evolve;
+        # the allowed values are enforced by the ck_user_role check constraint.
+        sa_type=sa.Enum(  # type: ignore[call-overload]
+            UserRole,
+            native_enum=False,
+            create_constraint=False,
+            length=20,
+            values_callable=lambda roles: [role.value for role in roles],
+        ),
+        sa_column_kwargs={"server_default": UserRole.MEMBER.value},
+    )
     full_name: str | None = Field(default=None, max_length=255)
 
 
@@ -32,7 +56,7 @@ class UserRegister(SQLModel):
 class UserUpdate(SQLModel):
     email: EmailStr | None = Field(default=None, max_length=255)
     is_active: bool | None = None
-    is_superuser: bool | None = None
+    role: UserRole | None = None
     full_name: str | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
@@ -103,6 +127,13 @@ class ItemPublic(ItemBase):
 class ItemsPublic(SQLModel):
     data: list[ItemPublic]
     count: int
+
+
+class MetricsPublic(SQLModel):
+    total_users: int
+    active_users: int
+    users_by_role: dict[UserRole, int]
+    total_items: int
 
 
 # Generic message
