@@ -58,6 +58,35 @@ To open a shell in the backend container:
 $ docker compose exec backend bash
 ```
 
+## Roles and Access
+
+Users have one of three roles, stored in `user.role` and enforced in the API
+(`app/api/deps.py: require_roles`):
+
+| Role | Can do |
+| --- | --- |
+| `admin` | Manage users and their access (create, edit, change role, deactivate, delete). |
+| `manager` | View users and the metrics page. Cannot change any user or access. |
+| `member` | View and update their own profile. |
+
+- The migration `4b7e2c1d9a10` replaces `is_superuser`: existing superusers become
+  `admin`, everyone else becomes `member`. Downgrade maps only `admin` back to
+  superuser.
+- Roles and active status are read from the database on every request, so changes
+  apply to users who are already logged in.
+- Admins cannot remove their own admin access, so at least one active admin remains.
+- Self-registration always creates a `member`.
+
+To try all three roles locally, after `scripts/prestart.sh`:
+
+```console
+$ uv run python app/seed_role_users.py
+```
+
+This creates `manager@example.com` and `member@example.com` (password `changethis123`);
+the admin is `FIRST_SUPERUSER` from `.env`. The script only runs with
+`FASTAPI_ENV=development`.
+
 ## Backend Tests
 
 To test the backend from the `backend` directory, run:
